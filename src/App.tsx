@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
 import { BottomNav } from './components/BottomNav';
 import { LiveArrivalsScreen } from './components/LiveArrivalsScreen';
@@ -9,6 +9,7 @@ import { AdvisoriesScreen } from './components/AdvisoriesScreen';
 import { ArrivalAlertModal } from './components/ArrivalAlertModal';
 import { BUS_STOPS } from './data/transitData';
 import { BusStop, BusServiceArrival, BusArrivalTiming } from './types/transit';
+import { fetchApiHealth, fetchLtaBusArrival } from './services/ltaApi';
 import { CheckCircle2, BellRing, X } from 'lucide-react';
 
 export default function App() {
@@ -16,6 +17,8 @@ export default function App() {
   const [stops, setStops] = useState<BusStop[]>(BUS_STOPS);
   const [selectedStop, setSelectedStop] = useState<BusStop>(BUS_STOPS[0]);
   const [selectedInspectService, setSelectedInspectService] = useState<string>('147');
+  const [isLiveFeed, setIsLiveFeed] = useState<boolean>(false);
+  const [ltaKeyConfigured, setLtaKeyConfigured] = useState<boolean>(false);
 
   // Favorites state
   const [favorites, setFavorites] = useState<string[]>(() => {
@@ -48,6 +51,67 @@ export default function App() {
   const [secondsToRefresh, setSecondsToRefresh] = useState<number>(15);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
+  // Check API Health on initial mount
+  useEffect(() => {
+    fetchApiHealth().then((health) => {
+      if (health) {
+        setLtaKeyConfigured(Boolean(health.environment?.hasLtaAccountKey));
+      }
+    });
+  }, []);
+
+  // Telemetry Sync with LTA DataMall v3 API
+  const triggerTelemetrySync = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      // Query the LTA proxy endpoint
+      const result = await fetchLtaBusArrival(selectedStop.code);
+
+      if (result.isLive && result.services && result.services.length > 0) {
+        setIsLiveFeed(true);
+        setLtaKeyConfigured(true);
+        // Update current stop's services with live telemetry
+        setSelectedStop((prev) => ({
+          ...prev,
+          services: result.services!,
+        }));
+        setStops((prev) =>
+          prev.map((s) =>
+            s.code === selectedStop.code
+              ? { ...s, services: result.services! }
+              : s
+          )
+        );
+      } else {
+        // Fallback simulation when LTA_ACCOUNT_KEY is not configured yet
+        setIsLiveFeed(false);
+        setLtaKeyConfigured(result.configured);
+        setStops((prevStops) =>
+          prevStops.map((stop) => ({
+            ...stop,
+            services: stop.services.map((svc) => ({
+              ...svc,
+              timings: svc.timings.map((t, idx) => {
+                if (idx === 0) {
+                  return {
+                    ...t,
+                    minutes: Math.max(0, t.minutes),
+                    speedKmH: Math.floor(20 + Math.random() * 25),
+                  };
+                }
+                return t;
+              }) as [BusArrivalTiming, BusArrivalTiming, BusArrivalTiming],
+            })),
+          }))
+        );
+      }
+    } catch {
+      setIsLiveFeed(false);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [selectedStop.code]);
+
   // Periodic refresh ticker
   useEffect(() => {
     const timer = setInterval(() => {
@@ -60,52 +124,12 @@ export default function App() {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [triggerTelemetrySync]);
 
-  // Save favorites
+  // Fetch when stop changes
   useEffect(() => {
-    try {
-      localStorage.setItem('transit_velocity_fav_services', JSON.stringify(favorites));
-    } catch {
-      // localStorage fallback
-    }
-  }, [favorites]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('transit_velocity_fav_stops', JSON.stringify(favoriteStops));
-    } catch {
-      // localStorage fallback
-    }
-  }, [favoriteStops]);
-
-  // Telemetry Sync Simulator
-  const triggerTelemetrySync = () => {
-    setIsRefreshing(true);
-    setTimeout(() => {
-      setStops((prevStops) =>
-        prevStops.map((stop) => ({
-          ...stop,
-          services: stop.services.map((svc) => ({
-            ...svc,
-            timings: svc.timings.map((t, idx) => {
-              // Subtle dynamic variance simulating real GPS movement
-              if (idx === 0) {
-                const newMin = Math.max(0, t.minutes);
-                return {
-                  ...t,
-                  minutes: newMin,
-                  speedKmH: Math.floor(20 + Math.random() * 25),
-                };
-              }
-              return t;
-            }) as [BusArrivalTiming, BusArrivalTiming, BusArrivalTiming],
-          })),
-        }))
-      );
-      setIsRefreshing(false);
-    }, 600);
-  };
+    triggerTelemetrySync();
+  }, [selectedStop.code, triggerTelemetrySync]);
 
   const handleManualRefresh = () => {
     triggerTelemetrySync();
@@ -210,6 +234,8 @@ export default function App() {
             onToggleFavoriteStop={handleToggleFavoriteStop}
             activeAlarms={activeAlarms}
             onNavigateToAdvisories={() => setActiveTab('advisories')}
+            isLiveFeed={isLiveFeed}
+            ltaKeyConfigured={ltaKeyConfigured}
           />
         )}
 

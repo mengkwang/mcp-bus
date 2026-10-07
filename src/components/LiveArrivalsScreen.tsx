@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { BusStop, BusServiceArrival, BusArrivalTiming } from '../types/transit';
 import { BusArrivalCard } from './BusArrivalCard';
-import { Search, X, MapPin, ShieldCheck, Users, Star, AlertTriangle } from 'lucide-react';
+import { Search, X, MapPin, ShieldCheck, Users, Star, AlertTriangle, Radio, Server, ExternalLink } from 'lucide-react';
 
 interface LiveArrivalsScreenProps {
   stops: BusStop[];
@@ -15,6 +15,8 @@ interface LiveArrivalsScreenProps {
   onToggleFavoriteStop: (stopCode: string) => void;
   activeAlarms: string[];
   onNavigateToAdvisories: () => void;
+  isLiveFeed?: boolean;
+  ltaKeyConfigured?: boolean;
 }
 
 export const LiveArrivalsScreen: React.FC<LiveArrivalsScreenProps> = ({
@@ -29,9 +31,12 @@ export const LiveArrivalsScreen: React.FC<LiveArrivalsScreenProps> = ({
   onToggleFavoriteStop,
   activeAlarms,
   onNavigateToAdvisories,
+  isLiveFeed = false,
+  ltaKeyConfigured = false,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'fav' | 'seats' | 'dd' | 'wab'>('all');
+  const [showApiModal, setShowApiModal] = useState(false);
 
   // Filter bus stops for the search dropdown/presets
   const filteredStops = stops.filter(
@@ -253,6 +258,39 @@ export const LiveArrivalsScreen: React.FC<LiveArrivalsScreenProps> = ({
           </div>
         </div>
 
+        {/* LTA API Status Banner */}
+        <div className="mt-3 pt-2.5 border-t border-[#f1f5f9] flex items-center justify-between gap-2 text-xs flex-wrap">
+          <div className="flex items-center gap-2">
+            <span
+              className={`w-2 h-2 rounded-full shrink-0 ${
+                isLiveFeed
+                  ? 'bg-emerald-500 animate-pulse'
+                  : ltaKeyConfigured
+                  ? 'bg-blue-500'
+                  : 'bg-amber-500'
+              }`}
+            />
+            <span className="font-semibold text-[#161c24]">
+              {isLiveFeed
+                ? 'LTA DataMall v3 Live Feed Active (20s cycle)'
+                : ltaKeyConfigured
+                ? 'LTA AccountKey Ready · Connecting'
+                : 'LTA API Ready (Add LTA_ACCOUNT_KEY in Vercel)'}
+            </span>
+            <span className="text-[11px] text-[#82727e] font-mono hidden sm:inline">
+              · GET /api/bus-arrival?BusStopCode={selectedStop.code}
+            </span>
+          </div>
+
+          <button
+            onClick={() => setShowApiModal(true)}
+            className="inline-flex items-center gap-1 text-[11px] font-bold text-[#6E1D6B] hover:text-[#520051] bg-[#eff4ff] hover:bg-[#e3e8f4] px-2 py-0.5 rounded cursor-pointer transition-colors shrink-0"
+          >
+            <Server className="w-3 h-3" />
+            <span>API Docs & Setup</span>
+          </button>
+        </div>
+
         {/* Live Service Advisory Banner if route affected */}
         {hasAdvisoryAffecting && (
           <div className="mt-3 p-2.5 bg-[#fff7ed] border-l-4 border-[#D95E1E] rounded-r-lg flex items-center justify-between gap-2 text-xs">
@@ -271,6 +309,89 @@ export const LiveArrivalsScreen: React.FC<LiveArrivalsScreenProps> = ({
           </div>
         )}
       </div>
+
+      {/* LTA API Setup & Endpoint Monitor Modal */}
+      {showApiModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-[#E2E8F0] space-y-4">
+            <div className="flex items-center justify-between border-b border-[#f1f5f9] pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-[#6E1D6B] text-white flex items-center justify-center">
+                  <Radio className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#161c24]">
+                    LTA DataMall v3 API Integration
+                  </h3>
+                  <span className="text-[11px] text-[#82727e]">
+                    Land Transport Authority Public Transport Telemetry
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowApiModal(false)}
+                className="text-[#82727e] hover:text-[#161c24] p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-[#50434d]">
+              <div className="bg-[#f8f9ff] border border-[#e9eefa] rounded-xl p-3 space-y-1.5">
+                <span className="font-bold text-[#161c24] block text-[11px] uppercase tracking-wider">
+                  Configured Endpoints
+                </span>
+                <div className="font-mono text-[11px] space-y-1">
+                  <div className="p-1.5 bg-white rounded border border-[#d4c1ce]/40 flex items-center justify-between">
+                    <span className="text-[#6E1D6B] font-bold">GET /api/bus-arrival</span>
+                    <span className="text-[#82727e]">?BusStopCode=04121[&ServiceNo=7]</span>
+                  </div>
+                  <div className="p-1.5 bg-white rounded border border-[#d4c1ce]/40 flex items-center justify-between">
+                    <span className="text-[#00875A] font-bold">GET /api/health</span>
+                    <span className="text-[#82727e]">Uptime & LTA Key Monitor</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="font-bold text-[#161c24] block text-[11px] uppercase tracking-wider">
+                  How to enable Live Data on Vercel
+                </span>
+                <ol className="list-decimal list-inside space-y-1 pl-1 text-[11px] leading-relaxed">
+                  <li>Go to your <strong>Vercel Project Dashboard</strong> &rarr; <strong>Settings</strong> &rarr; <strong>Environment Variables</strong>.</li>
+                  <li>Add key name: <code className="font-mono font-bold text-[#6E1D6B]">LTA_ACCOUNT_KEY</code></li>
+                  <li>Value: Your DataMall AccountKey (from LTA DataMall portal).</li>
+                  <li>Deploy/Redeploy. The app immediately queries live 20s telemetry!</li>
+                </ol>
+              </div>
+
+              <div className="bg-[#eff4ff] p-2.5 rounded-lg border border-[#d4c1ce]/40 flex items-center justify-between gap-2">
+                <span className="text-[11px]">
+                  Request an official LTA key at <strong>datamall.lta.gov.sg</strong>
+                </span>
+                <a
+                  href="https://datamall.lta.gov.sg/content/datamall/en/request-for-api.html"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 font-bold text-[#6E1D6B] hover:underline"
+                >
+                  <span>Portal</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-[#f1f5f9] flex justify-end">
+              <button
+                onClick={() => setShowApiModal(false)}
+                className="px-4 py-2 text-xs font-bold text-white bg-[#6E1D6B] hover:bg-[#581755] rounded-lg transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 3. Filter Controls (Buttons/Segmented controls adhering to Zero-Pill discipline) */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
