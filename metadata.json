@@ -1,0 +1,6 @@
+{
+  "name": "Metropolitan Transit Velocity",
+  "description": "High-efficiency urban transit monitor and live bus velocity tracker for Singapore commuters, featuring real-time arrivals, multi-berth schedules, and route diagnostics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
