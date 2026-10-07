@@ -1,7 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BusStop, BusServiceArrival, BusArrivalTiming } from '../types/transit';
 import { BusArrivalCard } from './BusArrivalCard';
-import { Search, X, MapPin, ShieldCheck, Users, Star, AlertTriangle, Radio, Server, ExternalLink } from 'lucide-react';
+import { ApiHealthStatus, getStoredApiKey } from '../services/ltaApi';
+import {
+  Search,
+  X,
+  MapPin,
+  ShieldCheck,
+  Users,
+  Star,
+  AlertTriangle,
+  Radio,
+  Server,
+  ExternalLink,
+  CheckCircle2,
+  XCircle,
+  Key,
+  Activity,
+  Clock,
+} from 'lucide-react';
 
 interface LiveArrivalsScreenProps {
   stops: BusStop[];
@@ -17,6 +34,9 @@ interface LiveArrivalsScreenProps {
   onNavigateToAdvisories: () => void;
   isLiveFeed?: boolean;
   ltaKeyConfigured?: boolean;
+  apiHealth?: ApiHealthStatus | null;
+  onSaveApiKey?: (key: string) => void;
+  onClearApiKey?: () => void;
 }
 
 export const LiveArrivalsScreen: React.FC<LiveArrivalsScreenProps> = ({
@@ -33,10 +53,18 @@ export const LiveArrivalsScreen: React.FC<LiveArrivalsScreenProps> = ({
   onNavigateToAdvisories,
   isLiveFeed = false,
   ltaKeyConfigured = false,
+  apiHealth = null,
+  onSaveApiKey,
+  onClearApiKey,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'fav' | 'seats' | 'dd' | 'wab'>('all');
   const [showApiModal, setShowApiModal] = useState(false);
+  const [inputApiKey, setInputApiKey] = useState('');
+
+  useEffect(() => {
+    setInputApiKey(getStoredApiKey());
+  }, [showApiModal]);
 
   // Filter bus stops for the search dropdown/presets
   const filteredStops = stops.filter(
@@ -336,10 +364,110 @@ export const LiveArrivalsScreen: React.FC<LiveArrivalsScreenProps> = ({
               </button>
             </div>
 
-            <div className="space-y-3 text-xs text-[#50434d]">
+            <div className="space-y-3.5 text-xs text-[#50434d]">
+              {/* Live Health Status Dashboard Card */}
+              <div className="bg-[#f8f9ff] border border-[#e9eefa] rounded-xl p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-[#161c24] text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                    <Activity className="w-3.5 h-3.5 text-[#6E1D6B]" />
+                    API Health & Upstream Probe
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                      apiHealth?.ltaIntegration?.probeStatus === 'operational'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : apiHealth?.ltaIntegration?.probeStatus === 'unauthorized_invalid_key'
+                        ? 'bg-red-100 text-red-800'
+                        : 'bg-amber-100 text-amber-800'
+                    }`}
+                  >
+                    {apiHealth?.ltaIntegration?.probeStatus === 'operational'
+                      ? 'Healthy · Live LTA Active'
+                      : apiHealth?.ltaIntegration?.probeStatus === 'unauthorized_invalid_key'
+                      ? 'Invalid Key (HTTP 401)'
+                      : 'Key Not Configured'}
+                  </span>
+                </div>
+
+                <div className="text-[11px] space-y-1">
+                  <div className="flex items-center justify-between text-[#50434d]">
+                    <span>Status Message:</span>
+                    <span className="font-semibold text-[#161c24] text-right truncate max-w-[260px]">
+                      {apiHealth?.ltaIntegration?.message || 'Serverless API running.'}
+                    </span>
+                  </div>
+
+                  {apiHealth?.ltaIntegration?.latencyMs !== undefined && apiHealth.ltaIntegration.latencyMs !== null && (
+                    <div className="flex items-center justify-between text-[#50434d]">
+                      <span>LTA Response Latency:</span>
+                      <span className="font-mono font-bold text-[#161c24] flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-[#D95E1E]" />
+                        {apiHealth.ltaIntegration.latencyMs}ms
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between text-[#50434d]">
+                    <span>Active Key Source:</span>
+                    <span className="font-mono text-[10px] font-bold text-[#6E1D6B]">
+                      {apiHealth?.ltaIntegration?.keySource || 'none'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Interactive Key Input & Test Control */}
+              <div className="bg-white border border-[#d4c1ce] rounded-xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-[#161c24] text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-[#D95E1E]" />
+                    LTA DataMall AccountKey
+                  </label>
+                  {inputApiKey && (
+                    <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> Served in updates
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="password"
+                    value={inputApiKey}
+                    onChange={(e) => setInputApiKey(e.target.value)}
+                    placeholder="Enter or paste your LTA AccountKey..."
+                    className="flex-1 px-3 py-2 text-xs bg-[#f8f9ff] border border-[#d4c1ce] rounded-lg text-[#161c24] font-mono focus:outline-none focus:ring-2 focus:ring-[#6E1D6B]"
+                  />
+                  {onSaveApiKey && (
+                    <button
+                      onClick={() => onSaveApiKey(inputApiKey)}
+                      className="px-3 py-2 bg-[#6E1D6B] hover:bg-[#581755] text-white font-bold text-xs rounded-lg transition-colors cursor-pointer shrink-0"
+                    >
+                      Save & Test
+                    </button>
+                  )}
+                  {inputApiKey && onClearApiKey && (
+                    <button
+                      onClick={() => {
+                        setInputApiKey('');
+                        onClearApiKey();
+                      }}
+                      className="px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-[#50434d] font-bold text-xs rounded-lg transition-colors cursor-pointer shrink-0"
+                      title="Clear stored key"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] text-[#82727e] leading-tight">
+                  Keys are automatically passed with every 15s/20s arrival update via request headers.
+                </p>
+              </div>
+
+              {/* Configured Endpoints */}
               <div className="bg-[#f8f9ff] border border-[#e9eefa] rounded-xl p-3 space-y-1.5">
                 <span className="font-bold text-[#161c24] block text-[11px] uppercase tracking-wider">
-                  Configured Endpoints
+                  Serverless TypeScript Endpoints
                 </span>
                 <div className="font-mono text-[11px] space-y-1">
                   <div className="p-1.5 bg-white rounded border border-[#d4c1ce]/40 flex items-center justify-between">
@@ -348,20 +476,21 @@ export const LiveArrivalsScreen: React.FC<LiveArrivalsScreenProps> = ({
                   </div>
                   <div className="p-1.5 bg-white rounded border border-[#d4c1ce]/40 flex items-center justify-between">
                     <span className="text-[#00875A] font-bold">GET /api/health</span>
-                    <span className="text-[#82727e]">Uptime & LTA Key Monitor</span>
+                    <span className="text-[#82727e]">Active Uptime & LTA Probe</span>
                   </div>
                 </div>
               </div>
 
+              {/* Vercel Environment Deployment Guide */}
               <div className="space-y-1.5">
                 <span className="font-bold text-[#161c24] block text-[11px] uppercase tracking-wider">
-                  How to enable Live Data on Vercel
+                  Permanent Vercel Deployment Setup
                 </span>
                 <ol className="list-decimal list-inside space-y-1 pl-1 text-[11px] leading-relaxed">
-                  <li>Go to your <strong>Vercel Project Dashboard</strong> &rarr; <strong>Settings</strong> &rarr; <strong>Environment Variables</strong>.</li>
-                  <li>Add key name: <code className="font-mono font-bold text-[#6E1D6B]">LTA_ACCOUNT_KEY</code></li>
-                  <li>Value: Your DataMall AccountKey (from LTA DataMall portal).</li>
-                  <li>Deploy/Redeploy. The app immediately queries live 20s telemetry!</li>
+                  <li>Go to your <strong>Vercel Dashboard</strong> &rarr; <strong>Settings</strong> &rarr; <strong>Environment Variables</strong>.</li>
+                  <li>Add variable name: <code className="font-mono font-bold text-[#6E1D6B]">LTA_ACCOUNT_KEY</code></li>
+                  <li>Value: Your DataMall AccountKey.</li>
+                  <li>Redeploy. The API endpoints automatically serve and authenticate live queries!</li>
                 </ol>
               </div>
 

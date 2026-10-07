@@ -1,3 +1,6 @@
+import type { ApiRequest, ApiResponse } from './health.ts';
+import { getLtaAccountKey } from './health.ts';
+
 /**
  * LTA DataMall v3 Bus Arrival Proxy Endpoint
  *
@@ -7,11 +10,14 @@
  * Refreshes every 20 seconds.
  */
 
-export default async function handler(req, res) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   // CORS configuration
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, AccountKey, x-account-key');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, AccountKey, accountkey, x-account-key, x-lta-account-key'
+  );
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -22,7 +28,7 @@ export default async function handler(req, res) {
   }
 
   // Parse parameters
-  const query = req.query || {};
+  const query = (req.query as Record<string, string | undefined>) || {};
   const busStopCode =
     query.BusStopCode || query.busStopCode || query.busstopcode;
   const serviceNo = query.ServiceNo || query.serviceNo || query.serviceno;
@@ -34,20 +40,18 @@ export default async function handler(req, res) {
     });
   }
 
-  // Resolve LTA Account Key (From environment or request header)
-  const accountKey =
-    process.env.LTA_ACCOUNT_KEY ||
-    req.headers['accountkey'] ||
-    req.headers['x-account-key'] ||
-    '';
+  // Resolve LTA Account Key from headers, query, or environment variables
+  const { key: accountKey, source: keySource } = getLtaAccountKey(req);
 
   if (!accountKey || accountKey.trim() === '') {
     return res.status(200).json({
       isLive: false,
       configured: false,
+      hasAccountKey: false,
+      keySource: 'none',
       BusStopCode: String(busStopCode),
       message:
-        'LTA_ACCOUNT_KEY is not yet configured in environment variables. Add LTA_ACCOUNT_KEY in Vercel to receive live Singapore bus telemetry.',
+        'LTA_ACCOUNT_KEY is not configured in Vercel environment or request headers. Configure LTA_ACCOUNT_KEY in Vercel to receive live Singapore bus telemetry.',
       documentation:
         'https://datamall.lta.gov.sg/content/datamall/en/request-for-api.html',
       Services: [],
@@ -64,18 +68,27 @@ export default async function handler(req, res) {
       url.searchParams.set('ServiceNo', String(serviceNo));
     }
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
     const response = await fetch(url.toString(), {
       method: 'GET',
       headers: {
         AccountKey: accountKey.trim(),
         accept: 'application/json',
       },
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorText = await response.text();
       return res.status(response.status).json({
         isLive: false,
+        configured: true,
+        hasAccountKey: true,
+        keySource,
         error: `LTA DataMall API responded with HTTP ${response.status}`,
         details: errorText,
       });
@@ -92,13 +105,23 @@ export default async function handler(req, res) {
     return res.status(200).json({
       isLive: true,
       configured: true,
+      hasAccountKey: true,
+      keySource,
       ...data,
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error fetching LTA BusArrival:', error);
+    const isAbort =
+      error instanceof Error && error.name === 'AbortError';
+
     return res.status(502).json({
       isLive: false,
-      error: 'Failed to connect to LTA DataMall upstream service',
+      configured: true,
+      hasAccountKey: true,
+      keySource,
+      error: isAbort
+        ? 'LTA DataMall request timed out after 8 seconds'
+        : 'Failed to connect to LTA DataMall upstream service',
       message: error instanceof Error ? error.message : String(error),
     });
   }

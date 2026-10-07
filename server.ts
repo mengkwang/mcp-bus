@@ -1,8 +1,8 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
-import healthHandler from './api/health.js';
-import busArrivalHandler from './api/bus-arrival.js';
+import healthHandler from './api/health.ts';
+import busArrivalHandler from './api/bus-arrival.ts';
 
 dotenv.config();
 

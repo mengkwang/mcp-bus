@@ -9,7 +9,14 @@ import { AdvisoriesScreen } from './components/AdvisoriesScreen';
 import { ArrivalAlertModal } from './components/ArrivalAlertModal';
 import { BUS_STOPS } from './data/transitData';
 import { BusStop, BusServiceArrival, BusArrivalTiming } from './types/transit';
-import { fetchApiHealth, fetchLtaBusArrival } from './services/ltaApi';
+import {
+  fetchApiHealth,
+  fetchLtaBusArrival,
+  getStoredApiKey,
+  setStoredApiKey,
+  clearStoredApiKey,
+  ApiHealthStatus,
+} from './services/ltaApi';
 import { CheckCircle2, BellRing, X } from 'lucide-react';
 
 export default function App() {
@@ -19,6 +26,7 @@ export default function App() {
   const [selectedInspectService, setSelectedInspectService] = useState<string>('147');
   const [isLiveFeed, setIsLiveFeed] = useState<boolean>(false);
   const [ltaKeyConfigured, setLtaKeyConfigured] = useState<boolean>(false);
+  const [apiHealth, setApiHealth] = useState<ApiHealthStatus | null>(null);
 
   // Favorites state
   const [favorites, setFavorites] = useState<string[]>(() => {
@@ -51,26 +59,32 @@ export default function App() {
   const [secondsToRefresh, setSecondsToRefresh] = useState<number>(15);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
-  // Check API Health on initial mount
-  useEffect(() => {
-    fetchApiHealth().then((health) => {
-      if (health) {
-        setLtaKeyConfigured(Boolean(health.environment?.hasLtaAccountKey));
-      }
-    });
+  const checkHealth = useCallback(async (overrideKey?: string) => {
+    const health = await fetchApiHealth(overrideKey);
+    setApiHealth(health);
+    const hasKey = Boolean(
+      health?.environment?.hasLtaAccountKey ||
+      health?.ltaIntegration?.configured ||
+      getStoredApiKey()
+    );
+    setLtaKeyConfigured(hasKey);
+    return health;
   }, []);
 
-  // Telemetry Sync with LTA DataMall v3 API
+  // Check API Health on initial mount
+  useEffect(() => {
+    checkHealth();
+  }, [checkHealth]);
+
+  // Telemetry Sync with LTA DataMall v3 API (serves API key in every update)
   const triggerTelemetrySync = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      // Query the LTA proxy endpoint
       const result = await fetchLtaBusArrival(selectedStop.code);
 
       if (result.isLive && result.services && result.services.length > 0) {
         setIsLiveFeed(true);
         setLtaKeyConfigured(true);
-        // Update current stop's services with live telemetry
         setSelectedStop((prev) => ({
           ...prev,
           services: result.services!,
@@ -83,9 +97,8 @@ export default function App() {
           )
         );
       } else {
-        // Fallback simulation when LTA_ACCOUNT_KEY is not configured yet
         setIsLiveFeed(false);
-        setLtaKeyConfigured(result.configured);
+        setLtaKeyConfigured(Boolean(result.configured || result.hasAccountKey));
         setStops((prevStops) =>
           prevStops.map((stop) => ({
             ...stop,
@@ -111,6 +124,27 @@ export default function App() {
       setIsRefreshing(false);
     }
   }, [selectedStop.code]);
+
+  const handleSaveApiKey = async (newKey: string) => {
+    setStoredApiKey(newKey);
+    const health = await checkHealth(newKey);
+    await triggerTelemetrySync();
+
+    if (health?.ltaIntegration?.probeStatus === 'operational') {
+      showToast('LTA AccountKey verified & activated for live telemetry!');
+    } else if (health?.ltaIntegration?.probeStatus === 'unauthorized_invalid_key') {
+      showToast('Key saved, but LTA rejected it (HTTP 401). Check key validity.');
+    } else {
+      showToast('LTA AccountKey saved. Telemetry updates armed.');
+    }
+  };
+
+  const handleClearApiKey = async () => {
+    clearStoredApiKey();
+    await checkHealth();
+    await triggerTelemetrySync();
+    showToast('Session API Key cleared. Defaulting to environment settings.');
+  };
 
   // Periodic refresh ticker
   useEffect(() => {
@@ -236,6 +270,9 @@ export default function App() {
             onNavigateToAdvisories={() => setActiveTab('advisories')}
             isLiveFeed={isLiveFeed}
             ltaKeyConfigured={ltaKeyConfigured}
+            apiHealth={apiHealth}
+            onSaveApiKey={handleSaveApiKey}
+            onClearApiKey={handleClearApiKey}
           />
         )}
 

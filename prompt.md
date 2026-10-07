@@ -176,3 +176,16 @@ i will add the LTA_ACCOUNT_KEY in vercel environment variables later
 ```text
 create a prompt.md containing all my prompts located at project main
 ```
+
+---
+
+## Prompt 5: Migrate API Endpoints to TypeScript and Fix Key Serving in Updates
+
+```text
+1. revise API folder as bus-arrival and health .ts files from .js files
+
+2. API key is not served in updates 
+
+3. API key was initially served with serverless Vercel API key deployment; check if API is healthy; if not, fix the issue.
+```
+
